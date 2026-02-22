@@ -4,7 +4,15 @@ import React, {
   createContext, useContext, useEffect,
   useState, useCallback, ReactNode,
 } from "react";
-import { getPeraWallet, shortenAddress } from "@/lib/algorand";
+import { PeraWalletConnect } from "@perawallet/connect";
+
+let _pera: PeraWalletConnect | null = null;
+function getPeraWallet() {
+  if (!_pera) {
+    _pera = new PeraWalletConnect({ network: "testnet", shouldShowSignTxnToast: true });
+  }
+  return _pera;
+}
 
 interface WalletState {
   address: string | null;
@@ -18,33 +26,24 @@ interface WalletState {
 
 const WalletCtx = createContext<WalletState | null>(null);
 
-export function WalletProvider({ children }: { children: ReactNode }) {
-  const [address, setAddress]         = useState<string | null>(null);
-  const [isConnecting, setConnecting] = useState(false);
-  const [error, setError]             = useState<string | null>(null);
+function shorten(addr: string, n = 4) {
+  return addr ? `${addr.slice(0, n)}...${addr.slice(-n)}` : "";
+}
 
-  // Re-connect on mount if session exists
+export function WalletProvider({ children }: { children: ReactNode }) {
+  const [address, setAddress]   = useState<string | null>(null);
+  const [isConnecting, setConn] = useState(false);
+  const [error, setError]       = useState<string | null>(null);
+
   useEffect(() => {
     const pera = getPeraWallet();
-
     pera.reconnectSession()
-      .then((accounts) => {
-        if (accounts.length > 0) {
-          setAddress(accounts[0]);
-        }
-      })
-      .catch(() => {
-        // No existing session — that's fine
-      });
-
-    // Listen for disconnect from Pera app side
-    pera.connector?.on("disconnect", () => {
-      setAddress(null);
-    });
+      .then((accounts: string[]) => { if (accounts.length) setAddress(accounts[0]); })
+      .catch(() => {});
   }, []);
 
   const connect = useCallback(async () => {
-    setConnecting(true);
+    setConn(true);
     setError(null);
     try {
       const pera = getPeraWallet();
@@ -52,18 +51,16 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       setAddress(accounts[0]);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Connection failed";
-      // User rejected — not really an error
-      if (!msg.includes("closed") && !msg.includes("rejected")) {
+      if (!msg.includes("closed") && !msg.includes("rejected") && !msg.includes("cancel")) {
         setError(msg);
       }
     } finally {
-      setConnecting(false);
+      setConn(false);
     }
   }, []);
 
   const disconnect = useCallback(() => {
-    const pera = getPeraWallet();
-    pera.disconnect();
+    getPeraWallet().disconnect();
     setAddress(null);
     setError(null);
   }, []);
@@ -73,7 +70,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       address,
       isConnecting,
       isConnected: !!address,
-      shortAddress: address ? shortenAddress(address) : "",
+      shortAddress: address ? shorten(address) : "",
       connect,
       disconnect,
       error,
