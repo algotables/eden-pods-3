@@ -1,4 +1,3 @@
-cat > app/layout.tsx << 'EOF'
 import type { Metadata } from "next";
 import "./globals.css";
 import { WalletProvider } from "@/contexts/WalletContext";
